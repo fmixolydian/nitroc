@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "value.h"
+#include "errors.h"
 
 #pragma once
 
@@ -21,15 +22,30 @@ public:
         EXPR_END
     };
 
+    static constexpr const char *TypeToString(Type t) {
+        switch (t) {
+            case Type::CONSTANT:    return "CONSTANT";
+            case Type::LITERAL:     return "LITERAL";
+
+            case Type::COMMAND_SEP: return "COMMAND SEP";
+            case Type::CODE_START:  return "CODE START";
+            case Type::CODE_END:    return "CODE END";
+            case Type::EXPR_START:  return "EXPR START";
+            case Type::EXPR_END:    return "EXPR END";
+
+            default: throw std::invalid_argument("Unimplemented item");
+        }
+    }
+
     Type type;
-    Value data;
+    Value value;
 
     LexedToken(Type type) {
         this->type = type;
     }
 
-    LexedToken(Type type, Value data) {
-        this->data = data;
+    LexedToken(Type type, Value value) {
+        this->value = value;
         this->type = type;
     }
 };
@@ -40,11 +56,18 @@ private:
         NORMAL,
         STRING_S,
         STRING_D,
-        COMMENT
+        COMMENT,
+        ESCAPE_NEWLINE
     };
 
 public:
     std::list<LexedToken> tokens;
+
+    LexedBlock() {}
+
+    LexedBlock(std::list<LexedToken> tokens) {
+        this->tokens = tokens;
+    }
 
     LexedBlock(std::string code) {
         tokens.clear();
@@ -68,7 +91,7 @@ public:
             line_ch++;
 
             if (mode == Mode::NORMAL) {
-                if (std::string("\t\r\n\f #,;:()[]{}\"'").find(*iter) != std::string::npos) {
+                if (std::string("\t\r\n\f\\ #,;:()[]{}\"'").find(*iter) != std::string::npos) {
                     // modes
                     switch (*iter) {
                         case '"':
@@ -108,11 +131,14 @@ public:
                     }
 
                     switch (*iter) {
-                        case ';': tokens.push_back(LexedToken(LexedToken::Type::COMMAND_SEP)); break;
+                        case ';':
+                        case '\n': tokens.push_back(LexedToken(LexedToken::Type::COMMAND_SEP)); break;
                         case '[': tokens.push_back(LexedToken(LexedToken::Type::EXPR_START)); break;
                         case ']': tokens.push_back(LexedToken(LexedToken::Type::EXPR_END)); break;
                         case '{': tokens.push_back(LexedToken(LexedToken::Type::CODE_START)); break;
                         case '}': tokens.push_back(LexedToken(LexedToken::Type::CODE_END)); break;
+                        case '\\':
+                        case ',': mode = Mode::ESCAPE_NEWLINE; break;
                     }
                 } else {
                     buffer += *iter;
@@ -143,6 +169,10 @@ public:
                     
                     case Mode::COMMENT:
                         if (*iter == '\n') mode = Mode::NORMAL;
+                        break;
+                    
+                    case Mode::ESCAPE_NEWLINE:
+                        if (!std::isspace(*iter)) mode = Mode::NORMAL;
                         break;
                 }
             }
